@@ -1,6 +1,6 @@
-import learner
+from .learner import *
 
-class Learner(learner.Learner):
+class Learner(Learner):
     def plot_loss_change(sched, sma=1, n_skip=20, y_lim=(-0.01,0.01)):
         """
         Plots rate of change of the loss function.
