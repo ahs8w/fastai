@@ -1,11 +1,7 @@
-import csv
-
-from .imports import *
-from .torch_imports import *
-from .core import *
-from .transforms import *
-from .layer_optimizer import *
+from PIL.ImageFile import ImageFile
 from .dataloader import DataLoader
+from .transforms import *
+
 
 def get_cv_idxs(n, cv_idx=0, val_pct=0.2, seed=42):
     """ Get a list of index values for Validation set from a dataset
@@ -25,30 +21,62 @@ def get_cv_idxs(n, cv_idx=0, val_pct=0.2, seed=42):
     idxs = np.random.permutation(n)
     return idxs[idx_start:idx_start+n_val]
 
-def resize_img(fname, targ, path, new_path):
+def path_for(root_path, new_path, targ):
+    return os.path.join(root_path, new_path, str(targ))
+
+def resize_img(fname, targ, path, new_path, fn=None):
     """
     Enlarge or shrink a single image to scale, such that the smaller of the height or width dimension is equal to targ.
     """
-    dest = os.path.join(path,new_path,str(targ),fname)
+    if fn is None:
+        fn = resize_fn(targ)
+    dest = os.path.join(path_for(path, new_path, targ), fname)
     if os.path.exists(dest): return
     im = Image.open(os.path.join(path, fname)).convert('RGB')
-    r,c = im.size
-    ratio = targ/min(r,c)
-    sz = (scale_to(r, ratio, targ), scale_to(c, ratio, targ))
     os.makedirs(os.path.split(dest)[0], exist_ok=True)
-    im.resize(sz, Image.LINEAR).save(dest)
+    fn(im).save(dest)
 
-def resize_imgs(fnames, targ, path, new_path):
+def resize_fn(targ):
+    def resize(im):
+        r,c = im.size
+        ratio = targ/min(r,c)
+        sz = (scale_to(r, ratio, targ), scale_to(c, ratio, targ))
+        return im.resize(sz, Image.LINEAR)
+    return resize
+
+
+def resize_imgs(fnames, targ, path, new_path, resume=True, fn=None):
     """
     Enlarge or shrink a set of images in the same directory to scale, such that the smaller of the height or width dimension is equal to targ.
     Note: 
     -- This function is multithreaded for efficiency. 
     -- When destination file or folder already exist, function exists without raising an error. 
     """
-    if not os.path.exists(os.path.join(path,new_path,str(targ),fnames[0])):
-        with ThreadPoolExecutor(8) as e:
-            ims = e.map(lambda x: resize_img(x, targ, path, new_path), fnames)
-            for x in tqdm(ims, total=len(fnames), leave=False): pass
+    target_path = path_for(path, new_path, targ)
+    if resume:
+        subdirs = {os.path.dirname(p) for p in fnames}
+        subdirs = {s for s in subdirs if os.path.exists(os.path.join(target_path, s))}
+        already_resized_fnames = set()
+        for subdir in subdirs:
+            files = [os.path.join(subdir, file) for file in os.listdir(os.path.join(target_path, subdir))]
+            already_resized_fnames.update(set(files))
+        original_fnames = set(fnames)
+        fnames = list(original_fnames - already_resized_fnames)
+    
+    errors = {}
+    def safely_process(fname):
+        try:
+            resize_img(fname, targ, path, new_path, fn=fn)
+        except Exception as ex:
+            errors[fname] = str(ex)
+
+    if len(fnames) > 0:
+        with ThreadPoolExecutor(num_cpus()) as e:
+            ims = e.map(lambda fname: safely_process(fname), fnames)
+            for _ in tqdm(ims, total=len(fnames), leave=False): pass
+    if errors:
+        print('Some images failed to process:')
+        print(json.dumps(errors, indent=2))
     return os.path.join(path,new_path,str(targ))
 
 def read_dir(path, folder):
@@ -217,9 +245,9 @@ def open_image(fn):
         The image in RGB format as numpy array of floats normalized to range between 0.0 - 1.0
     """
     flags = cv2.IMREAD_UNCHANGED+cv2.IMREAD_ANYDEPTH+cv2.IMREAD_ANYCOLOR
-    if not os.path.exists(fn):
+    if not os.path.exists(fn) and not str(fn).startswith("http"):
         raise OSError('No such file or directory: {}'.format(fn))
-    elif os.path.isdir(fn):
+    elif os.path.isdir(fn) and not str(fn).startswith("http"):
         raise OSError('Is a directory: {}'.format(fn))
     else:
         #res = np.array(Image.open(fn), dtype=np.float32)/255
@@ -228,7 +256,7 @@ def open_image(fn):
         try:
             if str(fn).startswith("http"):
                 req = urllib.urlopen(str(fn))
-                image = np.asarray(bytearray(resp.read()), dtype="uint8")
+                image = np.asarray(bytearray(req.read()), dtype="uint8")
                 im = cv2.imdecode(image, flags).astype(np.float32)/255
             else:
                 im = cv2.imread(str(fn), flags).astype(np.float32)/255
@@ -245,8 +273,18 @@ class FilesDataset(BaseDataset):
     def get_x(self, i): return open_image(os.path.join(self.path, self.fnames[i]))
     def get_n(self): return len(self.fnames)
 
-    def resize_imgs(self, targ, new_path):
-        dest = resize_imgs(self.fnames, targ, self.path, new_path)
+    def resize_imgs(self, targ, new_path, resume=True, fn=None):
+        """
+        resize all images in the dataset and save them to `new_path`
+        
+        Arguments:
+        targ (int): the target size
+        new_path (string): the new folder to save the images
+        resume (bool): if true (default), allow resuming a partial resize operation by checking for the existence
+        of individual images rather than the existence of the directory
+        fn (function): custom resizing function Img -> Img
+        """
+        dest = resize_imgs(self.fnames, targ, self.path, new_path, resume, fn)
         return self.__class__(self.fnames, self.y, self.transform, dest)
 
     def denorm(self,arr):
@@ -295,6 +333,10 @@ class ArraysDataset(BaseDataset):
 class ArraysIndexDataset(ArraysDataset):
     def get_c(self): return int(self.y.max())+1
     def get_y(self, i): return self.y[i]
+
+
+class ArraysIndexRegressionDataset(ArraysIndexDataset):
+    def is_reg(self): return True
 
 
 class ArraysNhotDataset(ArraysDataset):
@@ -351,16 +393,29 @@ class ImageData(ModelData):
     @property
     def c(self): return self.trn_ds.c
 
-    def resized(self, dl, targ, new_path):
-        return dl.dataset.resize_imgs(targ,new_path) if dl else None
+    def resized(self, dl, targ, new_path, resume = True, fn=None):
+        """
+        Return a copy of this dataset resized
+        """
+        return dl.dataset.resize_imgs(targ, new_path, resume=resume, fn=fn) if dl else None
 
-    def resize(self, targ_sz, new_path='tmp'):
+    def resize(self, targ_sz, new_path='tmp', resume=True, fn=None):
+        """
+        Resizes all the images in the train, valid, test folders to a given size.
+
+        Arguments:
+        targ_sz (int): the target size
+        new_path (str): the path to save the resized images (default tmp)
+        resume (bool): if True, check for images in the DataSet that haven't been resized yet (useful if a previous resize
+        operation was aborted)
+        fn (function): optional custom resizing function
+        """
         new_ds = []
         dls = [self.trn_dl,self.val_dl,self.fix_dl,self.aug_dl]
         if self.test_dl: dls += [self.test_dl, self.test_aug_dl]
         else: dls += [None,None]
         t = tqdm_notebook(dls)
-        for dl in t: new_ds.append(self.resized(dl, targ_sz, new_path))
+        for dl in t: new_ds.append(self.resized(dl, targ_sz, new_path, resume, fn))
         t.close()
         return self.__class__(new_ds[0].path, new_ds, self.bs, self.num_workers, self.classes)
 
@@ -391,7 +446,7 @@ class ImageData(ModelData):
 
 class ImageClassifierData(ImageData):
     @classmethod
-    def from_arrays(cls, path, trn, val, bs=64, tfms=(None,None), classes=None, num_workers=4, test=None):
+    def from_arrays(cls, path, trn, val, bs=64, tfms=(None,None), classes=None, num_workers=4, test=None, continuous=False):
         """ Read in images and their labels given as numpy arrays
 
         Arguments:
@@ -408,7 +463,8 @@ class ImageClassifierData(ImageData):
         Returns:
             ImageClassifierData
         """
-        datasets = cls.get_ds(ArraysIndexDataset, trn, val, tfms, test=test)
+        f = ArraysIndexRegressionDataset if continuous else ArraysIndexDataset
+        datasets = cls.get_ds(f, trn, val, tfms, test=test)
         return cls(path, datasets, bs, num_workers, classes=classes)
 
     @classmethod

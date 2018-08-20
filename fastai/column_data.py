@@ -62,14 +62,14 @@ class ColumnarModelData(ModelData):
                    bs=bs, shuffle=shuffle, test_ds=test_ds)
 
     @classmethod
-    def from_data_frames(cls, path, trn_df, val_df, trn_y, val_y, cat_flds, bs, is_reg, is_multi, test_df=None, shuffle=True):
+    def from_data_frames(cls, path, trn_df, val_df, trn_y, val_y, cat_flds, bs=64, is_reg=True, is_multi=False, test_df=None, shuffle=True):
         trn_ds  = ColumnarDataset.from_data_frame(trn_df,  cat_flds, trn_y, is_reg, is_multi)
         val_ds  = ColumnarDataset.from_data_frame(val_df,  cat_flds, val_y, is_reg, is_multi)
         test_ds = ColumnarDataset.from_data_frame(test_df, cat_flds, None,  is_reg, is_multi) if test_df is not None else None
         return cls(path, trn_ds, val_ds, bs, test_ds=test_ds, shuffle=shuffle)
 
     @classmethod
-    def from_data_frame(cls, path, val_idxs, df, y, cat_flds, bs, is_reg=True, is_multi=False, test_df=None, shuffle=True):
+    def from_data_frame(cls, path, val_idxs, df, y, cat_flds, bs=64, is_reg=True, is_multi=False, test_df=None, shuffle=True):
         ((val_df, trn_df), (val_y, trn_y)) = split_by_idx(val_idxs, df, y)
         return cls.from_data_frames(path, trn_df, val_df, trn_y, val_y, cat_flds, bs, is_reg, is_multi, test_df=test_df, shuffle=shuffle)
 
@@ -89,6 +89,8 @@ class MixedInputModel(nn.Module):
     def __init__(self, emb_szs, n_cont, emb_drop, out_sz, szs, drops,
                  y_range=None, use_bn=False, is_reg=True, is_multi=False):
         super().__init__()
+        for i,(c,s) in enumerate(emb_szs): assert c > 1, f"cardinality must be >=2, got emb_szs[{i}]: ({c},{s})"
+        if is_reg==False and is_multi==False: assert out_sz >= 2, "For classification with out_sz=1, use is_multi=True"
         self.embs = nn.ModuleList([nn.Embedding(c, s) for c,s in emb_szs])
         for emb in self.embs: emb_init(emb)
         n_emb = sum(e.embedding_dim for e in self.embs)
@@ -141,8 +143,12 @@ class StructuredLearner(Learner):
 
     def _get_crit(self, data): return F.mse_loss if data.is_reg else F.binary_cross_entropy if data.is_multi else F.nll_loss
 
+    def predict_array(self,x_cat,x_cont):
+        self.model.eval()
+        return to_np(self.model(to_gpu(V(T(x_cat))),to_gpu(V(T(x_cont)))))
+
     def summary(self):
-        x = [torch.ones(3, self.data.trn_ds.cats.shape[1], dtype=torch.int64), torch.rand(3, self.data.trn_ds.conts.shape[1])]
+        x = [torch.ones(3, self.data.trn_ds.cats.shape[1]).long(), torch.rand(3, self.data.trn_ds.conts.shape[1])]
         return model_summary(self.model, x)
 
 
@@ -216,7 +222,7 @@ class CollabFilterLearner(Learner):
 
     def _get_crit(self, data): return F.mse_loss
 
-    def summary(self): return model_summary(self.model, [torch.ones(3, dtype=torch.int64), torch.ones(3, dtype=torch.int64)])
+    def summary(self): return model_summary(self.model, [torch.ones(3).long(), torch.ones(3).long()])
 
 
 class CollabFilterModel(BasicModel):

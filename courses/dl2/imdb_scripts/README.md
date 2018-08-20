@@ -30,7 +30,7 @@ create_toks.py --dir-path DIR_PATH [--chunksize CHUNKSIZE] [--n-lbls N_LBLS] [--
 
 - `DIR_PATH`: the directory where your data is located
 - `CHUNKSIZE`: the size of the chunks when reading the files with pandas; use smaller sizes with less RAM
-- `LANG`: the language of your corpus. 
+- `LANG`: the language of your corpus.
 
 `train.csv` and `val.csv` files should be in `DIR_PATH`. The script will then save the
 training and test tokens and labels as arrays to binary files in NumPy format in a `tmp`
@@ -55,7 +55,7 @@ tok2id.py --prefix PREFIX [--max-vocab MAX_VOCAB] [--min-freq MIN_FREQ]
 
 ### 3. Fine-tune the LM
 
-Before fine-tuning the language model, you can run `pretrain_lm.py` to create a 
+Before fine-tuning the language model, you can run `pretrain_lm.py` to create a
 pre-trained language model using WikiText-103 (or whatever base corpus you prefer).
 
 Example command: `python pretrain_lm.py data/wiki/de/ 0 --lr 1e-3 --cl 12`
@@ -105,7 +105,7 @@ finetune_lm.py --dir-path DIR_PATH --pretrain-path PRETRAIN_PATH [--cuda-id CUDA
 - `USE_CLR`: whether to use slanted triangular learning rates (STLR) (`True` by default)
 - `USE_REGULAR_SCHEDULE`: whether to use a regular schedule (instead of STLR)
 - `USE_DISCRIMINATIVE`: whether to use discriminative fine-tuning (`True` by default)
-- `NOTRAIN`: whether to skip fine-tuning 
+- `NOTRAIN`: whether to skip fine-tuning
 - `JOINED`: whether to fine-tune the LM on the concatenation of training and validation data
 - `TRAIN_FILE_ID`: can be used to indicate different training files (e.g. to test training sizes)
 - `EARLY_STOPPING`: whether to use early stopping
@@ -145,6 +145,35 @@ train_clas.py --dir-path DIR_PATH --cuda-id CUDA_ID [--lm-id LM_ID] [--clas-id C
 - `FROM_SCRATCH`: whether to train the model from scratch (without loading a pretrained model)
 - `TRAIN_FILE_ID`: can be used to indicate different training files (e.g. to test training sizes)
 
-For fine-tuning the classifier on IMDb, we set `--cl`, the number of epochs to `50`. 
+For fine-tuning the classifier on IMDb, we set `--cl`, the number of epochs to `50`.
 
 ### 5. Evaluate the classifier
+
+Run `eval_clas.py` to get the classifier accuracy and confusion matrix.
+
+This requires the files produced during the training process: itos.pkl and the classifier (named clas_1.h5 by default), as well as the `npy` files containing the evaluation samples and labels. 
+
+Example command: `python eval_clas.py data/imdb 0 --lm-id pretrain_wt103 --clas-id pretrain_wt103`
+
+Usage:
+```
+eval_clas.py DIR_PATH CUDA_ID [LM_ID] [CLAS_ID] [BS] [BACKWARDS] [BPE]
+eval_clas.py --dir-path DIR_PATH --cuda-id CUDA_ID [--lm-id LM_ID] [--clas-id CLAS_ID] [--bs BS] [--bpe BPE]
+```
+- `DIR_PATH`: the directory where the `tmp` and `models` folder are located
+- `CUDA_ID`: the id of the GPU used for training the model
+- `LM_ID`: the id of the fine-tuned language model that should be loaded
+- `CLAS_ID`: the id used for saving the classifier
+- `BS`: the batch size used for training the model
+- `BACKWARDS`: whether a backwards LM is trained
+- `BPE`: whether we use byte-pair encoding (BPE)
+
+### 6. Try the classifier on text
+
+Run `predict_with_classifier.py` to predict against free text entry.
+
+This requires two files produced during the training process: itos.pkl and the classifier (named clas_1.h5 by default)
+
+Example command: `python predict_with_classifier.py trained_models/itos.pkl trained_models/classifier_model.h5`
+
+It is suggested to customize this script to your needs.
