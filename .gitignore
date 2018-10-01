@@ -1,11 +1,10 @@
+*.bak
+*.log
 *~
 .pypirc
 ~*
 tmp*
-sample_data/
 tags
-data
-data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -73,9 +72,6 @@ instance/
 # Sphinx documentation
 docs/_build/
 
-# AsciiDoc documentation
-docs/fastai/
-
 # PyBuilder
 target/
 
@@ -125,3 +121,6 @@ Thumbs.db
 
 # pytest
 .pytest_cache
+
+# tools/trust-doc-nbs
+docs_src/.last_checked
