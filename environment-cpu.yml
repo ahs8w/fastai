@@ -78,7 +78,7 @@ dependencies:
 - sqlite
 - statsmodels
 - testfixtures
-- testpath
+- testpath<0.4
 - tk
 - tornado<5
 - tqdm
@@ -88,7 +88,7 @@ dependencies:
 - widgetsnbextension
 - xz
 - zeromq
-- pytorch<0.4
+- pytorch #<0.4
 - bcolz
 - prompt_toolkit
 - pytest
@@ -102,5 +102,4 @@ dependencies:
   - sklearn_pandas
   - feather-format
   - plotnine
-  - kaggle-cli
   - ipywidgets
