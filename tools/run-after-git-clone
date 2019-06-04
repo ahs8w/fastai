@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # if you're a fastai developer please make sure you do this:
 #
@@ -7,13 +7,14 @@
 #    tools/run-after-git-clone
 #
 
+import sys
+if sys.hexversion < 0x03060000: sys.exit("!!! Please re-run this script with python-3.6 or higher")
+
 import subprocess, os
 from pathlib import Path
 
 def run_script(script):
-
-    cmd = f"python {script}"
-    #print(f"Executing: {cmd}")
+    cmd = f"{sys.executable} {script}"
     result = subprocess.run(cmd.split(), shell=False, check=False,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -30,3 +31,5 @@ path = Path("tools")
 # facilitate trusting of the repo-wide .gitconfig
 run_script(path/"trust-origin-git-config")
 
+# facilitate trusting notebooks under docs_src
+run_script(path/"trust-doc-nbs-install-hook")

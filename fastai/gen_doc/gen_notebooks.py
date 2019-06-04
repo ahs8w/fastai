@@ -7,8 +7,8 @@ from pathlib import Path
 from .core import *
 from .nbdoc import *
 
-__all__ = ['create_module_page', 'generate_all', 'update_module_page', 'update_all', 'import_mod',
-           'link_nb', 'update_notebooks']
+__all__ = ['create_module_page', 'update_module_page', 'import_mod',
+           'link_nb', 'update_notebooks', 'generate_missing_metadata', 'update_nb_metadata']
 
 def get_empty_notebook():
     "Default notbook with the minimum metadata."
@@ -65,18 +65,28 @@ def get_global_vars(mod):
                 d[key] = f'`{codestr}` {get_source_link(mod, lineno)}'
     return d
 
-def write_nb(nb, nb_path, mode='w'): 
-    json.dump(nb, open(nb_path, mode), indent=1)
+def write_nb(nb, nb_path, mode='w'):
+    with open(nb_path, mode) as f: f.write(nbformat.writes(nbformat.from_dict(nb), version=4))
 
-def execute_nb(fname, metadata=None):
+class ExecuteShowDocPreprocessor(ExecutePreprocessor):
+    "An ExecutePreprocessor that only executes show_doc cells"
+    def preprocess_cell(self, cell, resources, index):
+        if 'source' in cell and cell.cell_type == "code":
+            if IMPORT_RE.search(cell['source']) or SHOW_DOC_RE.search(cell['source']):
+                return super().preprocess_cell(cell, resources, index)
+        return cell, resources
+
+def execute_nb(fname, metadata=None, save=True, show_doc_only=False):
     "Execute notebook `fname` with `metadata` for preprocessing."
     # Any module used in the notebook that isn't inside must be in the same directory as this script
     with open(fname) as f: nb = nbformat.read(f, as_version=4)
-    ep = ExecutePreprocessor(timeout=600, kernel_name='python3')
+    ep_class = ExecuteShowDocPreprocessor if show_doc_only else ExecutePreprocessor
+    ep = ep_class(timeout=600, kernel_name='python3')
     metadata = metadata or {}
     ep.preprocess(nb, metadata)
-    with open(fname, 'wt') as f: nbformat.write(nb, f)
-    NotebookNotary().sign(nb)
+    if save:
+        with open(fname, 'wt') as f: nbformat.write(nb, f)
+        NotebookNotary().sign(nb)
 
 def _symbol_skeleton(name): return [get_doc_cell(name), get_md_cell(f"`{name}`")]
 
@@ -85,8 +95,7 @@ def create_module_page(mod, dest_path, force=False):
     nb = get_empty_notebook()
     mod_name = mod.__name__
     strip_name = strip_fastai(mod_name)
-    init_cell = [get_md_cell(f'# {strip_name}'), get_md_cell('Type an introduction of the package here.')]
-    add_module_metadata(mod, init_cell)
+    init_cell = [get_md_cell(f'## Title for {strip_name} (use plain english, not module name!)'), get_md_cell('Type an introduction of the package here.')]
     cells = [get_code_cell(f'from fastai.gen_doc.nbdoc import *\nfrom {mod_name} import * ', True)]
 
     gvar_map = get_global_vars(mod)
@@ -112,35 +121,27 @@ _default_exclude = ['.ipynb_checkpoints', '__pycache__', '__init__.py', 'imports
 def get_module_names(path_dir, exclude=None):
     if exclude is None: exclude = _default_exclude
     "Search a given `path_dir` and return all the modules contained inside except those in `exclude`"
-    files = path_dir.glob('*')
-    res = []
+    files = sorted(path_dir.glob('*'), key=lambda x: (x.is_dir(), x.name), reverse=True) # directories first
+    res = [f'{path_dir.name}']
     for f in files:
         if f.is_dir() and f.name in exclude: continue # exclude directories
         if any([f.name.endswith(ex) for ex in exclude]): continue # exclude extensions
 
-        if f.name[-3:] == '.py': res.append(f'{path_dir.name}.{f.name[:-3]}')
+        if f.suffix == '.py': res.append(f'{path_dir.name}.{f.stem}')
         elif f.is_dir(): res += [f'{path_dir.name}.{name}' for name in get_module_names(f)]
     return res
-
-def generate_all(pkg_name, dest_path, exclude=None):
-    "Generate the documentation for all the modules in `pkg_name` at `dest_path`."
-    if exclude is None: exclude = _default_exclude
-    mod_files = get_module_names(Path(pkg_name), exclude)
-    for mod_name in mod_files:
-        mod = import_mod(mod_name)
-        if mod is None: continue
-        create_module_page(mod, dest_path)
 
 def read_nb(fname):
     "Read a notebook in `fname` and return its corresponding json"
     with open(fname,'r') as f: return nbformat.reads(f.read(), as_version=4)
 
+SHOW_DOC_RE = re.compile(r"show_doc\(([\w\.]*)")
 def read_nb_content(cells, mod_name):
     "Build a dictionary containing the position of the `cells`."
     doc_fns = {}
     for i, cell in enumerate(cells):
         if cell['cell_type'] == 'code':
-            for match in re.findall(r"show_doc\(([\w\.]*)", cell['source']):
+            for match in SHOW_DOC_RE.findall(cell['source']):
                 doc_fns[match] = i
     return doc_fns
 
@@ -185,63 +186,52 @@ def get_doc_path(mod, dest_path):
     strip_name = strip_fastai(mod.__name__)
     return os.path.join(dest_path,f'{strip_name}.ipynb')
 
-def add_module_metadata(mod, cells):
-    if has_metadata_cell(cells): return
-    mcode = (f'from fastai.gen_doc.gen_notebooks import update_module_metadata\n'
-             f'import {mod.__name__}\n'
-             f'# For updating jekyll metadata. You MUST reload notebook immediately after executing this cell for changes to save\n'
-             f'# Leave blank to autopopulate from mod.__doc__\n'
-             f'update_module_metadata({mod.__name__})')
-    cells.insert(0, get_code_cell(mcode, hidden=True))
+def generate_missing_metadata(dest_file):
+    fn = Path(dest_file)
+    meta_fn = fn.parent/'jekyll_metadata.ipynb'
+    if not fn.exists() or not meta_fn.exists(): return print('Could not find notebooks:', fn, meta_fn)
+    metadata_nb = read_nb(meta_fn)
 
-def update_module_metadata(mod, dest_path='.', title=None, summary=None, keywords=None, overwrite=True):
-    "Create jekyll metadata for given module. Title and summary are autopoulated (if None) from module.__name__ and module.__doc__."
-    title = title or strip_fastai(mod.__name__)
-    summary = summary or inspect.getdoc(mod)
-    update_nb_metadata(get_doc_path(mod, dest_path), title, summary, keywords, overwrite)
+    if has_metadata_cell(metadata_nb['cells'], fn.name): return
+    nb = read_nb(fn)
+    jmd = nb['metadata'].get('jekyll', {})
+    fmt_params = ''
+    for k,v in jmd.items(): fmt_params += f',\n    {k}={stringify(v)}'
+    metadata_cell = get_code_cell(f"update_nb_metadata('{Path(fn).name}'{fmt_params})", hidden=False)
+    metadata_nb['cells'].append(metadata_cell)
+    write_nb(metadata_nb, meta_fn)
 
-def update_nb_metadata(nb_path=None, title=None, summary=None, keywords=None, overwrite=True):
+def update_nb_metadata(nb_path=None, title=None, summary=None, keywords='fastai', overwrite=True, **kwargs):
     "Creates jekyll metadata for given notebook path."
     nb = read_nb(nb_path)
-    jm = {'title': title, 'summary': summary, 'keywords': keywords}
-    update_metadata(nb, jm, overwrite)
+    data = {'title': title, 'summary': summary, 'keywords': keywords, **kwargs}
+    data = {k:v for (k,v) in data.items() if v is not None} # remove none values
+    if not data: return
+    nb['metadata']['jekyll'] = data
     write_nb(nb, nb_path)
+    NotebookNotary().sign(nb)
 
-METADATA_RE = re.compile(r"update_\w+_metadata")
-def has_metadata_cell(cells):
-    for c in cells: 
-        if c['cell_type'] == 'code' and METADATA_RE.search(c['source']): return c
-
-def add_nb_metadata(nb, nb_path):
-    cells = nb['cells']
-    if has_metadata_cell(cells): return
-    jmb = nb['metadata'].get('jekyll', {})
-    title, summary = stringify(jmb.get('title')), stringify(jmb.get('summary'))
-    mcode = (f"from fastai.gen_doc.gen_notebooks import update_nb_metadata\n"
-             f"# For updating jekyll metadata. You MUST reload notebook immediately after executing this cell for changes to save\n"
-             f"update_nb_metadata('{Path(nb_path).name}', title={title}, summary={summary})")
-    metadata_cell = get_code_cell(mcode, hidden=True)
-    cells.insert(0, metadata_cell)
+def has_metadata_cell(cells, fn):
+    for c in cells:
+        if re.search(f"update_nb_metadata\('{fn}'", c['source']): return c
 
 def stringify(s): return f'\'{s}\'' if isinstance(s, str) else s
 
-def update_metadata(nb, data, overwrite=True):
-    "Create jekyll metadata. Always overwrite existing."
-    data = {k:v for (k,v) in data.items() if v is not None} # remove none values
-    if not data: return
-    if 'metadata' not in nb: nb['metadata'] = {}
-    if overwrite: nb['metadata']['jekyll'] = data
-    else: nb['metadata']['jekyll'] = nb['metadata'].get('jekyll', {}).update(data)
-
 IMPORT_RE = re.compile(r"from (fastai[\.\w_]*)")
-def get_imported_modules(cells):
-    module_names = ['fastai']
-    for cell in cells:
-        if cell['cell_type'] == 'code':
-            for m in IMPORT_RE.finditer(cell['source']):
-                if m.group(1) not in module_names: module_names.append(m.group(1))
-    mods = [import_mod(m) for m in module_names]
+def get_imported_modules(cells, nb_module_name=''):
+    "Finds all submodules of notebook - sorted by submodules > top level modules > manual imports. This gives notebook imports priority"
+    module_names = get_top_level_modules()
+    nb_imports = [match.group(1) for cell in cells for match in IMPORT_RE.finditer(cell['source']) if cell['cell_type'] == 'code']
+    parts = nb_module_name.split('.')
+    parent_modules = ['.'.join(parts[:(x+1)]) for x in range_of(parts)] # Imports parent modules - a.b.c = [a, a.b, a.b.c]
+    all_modules = module_names + nb_imports + parent_modules
+    mods = [import_mod(m, ignore_errors=True) for m in all_modules]
     return [m for m in mods if m is not None]
+
+def get_top_level_modules(num_levels=1):
+    mod_dir = Path(import_mod('fastai').__file__).parent
+    filtered_n = filter(lambda x: x.count('.')<=num_levels, get_module_names(mod_dir))
+    return sorted(filtered_n, key=lambda s: s.count('.'), reverse=True) # Submodules first (sorted by periods)
 
 NEW_FT_HEADER = '## New Methods - Please document or move to the undocumented section'
 UNDOC_HEADER = '## Undocumented Methods - Methods moved below this line will intentionally be hidden'
@@ -261,15 +251,22 @@ def remove_undoc_cells(cells):
     old, _, _ = parse_sections(cells)
     return old
 
+# currently code vbox sub-cells mainly
+def remove_code_cell_jupyter_widget_state_elem(cells):
+    for c in cells:
+        if c['cell_type'] == 'code':
+            if 'outputs' in c:
+                c['outputs'] = [l for l in c['outputs'] if not ('data' in l and 'application/vnd.jupyter.widget-view+json' in l.data)]
+    return cells
+
 def update_module_page(mod, dest_path='.'):
     "Update the documentation notebook of a given module."
     doc_path = get_doc_path(mod, dest_path)
     strip_name = strip_fastai(mod.__name__)
     nb = read_nb(doc_path)
     cells = nb['cells']
-    
-    add_module_metadata(mod, cells)
-    link_markdown_cells(cells, get_imported_modules(cells))
+
+    link_markdown_cells(cells, get_imported_modules(cells, mod.__name__))
 
     type_dict = read_nb_types(cells)
     gvar_map = get_global_vars(mod)
@@ -293,30 +290,20 @@ def update_module_page(mod, dest_path='.'):
 def link_nb(nb_path):
     nb = read_nb(nb_path)
     cells = nb['cells']
-    link_markdown_cells(cells, get_imported_modules(cells))
-    add_nb_metadata(nb, nb_path)
+    link_markdown_cells(cells, get_imported_modules(cells, Path(nb_path).stem))
     write_nb(nb, nb_path)
     NotebookNotary().sign(read_nb(nb_path))
-
-def update_all(pkg_name, dest_path='.', exclude=None, create_missing=False):
-    "Update all the notebooks in `pkg_name`."
-    if exclude is None: exclude = _default_exclude
-    mod_files = get_module_names(Path(pkg_name), exclude)
-    for f in mod_files:
-        mod = import_mod(f)
-        if mod is None: continue
-        if os.path.exists(get_doc_path(mod, dest_path)):
-            update_module_page(mod, dest_path)
-        elif create_missing:
-            print(f'Creating module page of {f}')
-            create_module_page(mod, dest_path)
 
 def get_module_from_notebook(doc_path):
     "Find module given a source path. Assume it belongs to fastai directory"
     return f'fastai.{Path(doc_path).stem}'
 
-def update_notebooks(source_path, dest_path=None, update_html=True, update_nb=False,
-                     update_nb_links=True, do_execute=False, html_path=None):
+def check_nbconvert_version():
+    import nbconvert
+    assert nbconvert.version_info >= (5,4,0), "Please update nbconvert to >=5.4 for consistent .html output"
+
+def update_notebooks(source_path, dest_path=None, update_html=True, document_new_fns=False,
+                     update_nb_links=True, html_path=None, force=False):
     "`source_path` can be a directory or a file. Assume all modules reside in the fastai directory."
     from .convert2html import convert_nb
     source_path = Path(source_path)
@@ -326,16 +313,25 @@ def update_notebooks(source_path, dest_path=None, update_html=True, update_nb=Fa
         html_path = dest_path/'..'/'docs' if html_path is None else Path(html_path)
         doc_path = source_path
         assert source_path.suffix == '.ipynb', 'Must update from notebook or module'
-        if update_nb:
+        if document_new_fns:
             mod = import_mod(get_module_from_notebook(source_path))
             if not mod: print('Could not find module for path:', source_path)
             elif mod.__file__.endswith('__init__.py'): pass
             else: update_module_page(mod, dest_path)
-        if update_nb_links: link_nb(doc_path)
-        if do_execute:
-            print(f'Executing notebook {doc_path}. Please wait...')
-            execute_nb(doc_path, {'metadata': {'path': doc_path.parent}})
-        if update_html: convert_nb(doc_path, html_path)
+        generate_missing_metadata(doc_path)
+        if update_nb_links:
+            print(f'Updating notebook {doc_path}. Please wait...')
+            link_nb(doc_path)
+            execute_nb(doc_path, {'metadata': {'path': doc_path.parent}}, show_doc_only=True)
+        if update_html:
+            check_nbconvert_version()
+            html_fn = html_path/doc_path.with_suffix('.html').name
+            if not force and html_fn.is_file():
+                in_mod  = os.path.getmtime(doc_path)
+                out_mod = os.path.getmtime(html_fn)
+                if in_mod < out_mod: return
+            convert_nb(doc_path, html_path)
+
     elif (source_path.name.startswith('fastai.')):
         # Do module update
         assert dest_path is not None, 'To update a module, you must specify a destination folder for where notebook resides'
@@ -345,9 +341,10 @@ def update_notebooks(source_path, dest_path=None, update_html=True, update_nb=Fa
         if not doc_path.exists():
             print('Notebook does not exist. Creating:', doc_path)
             create_module_page(mod, dest_path)
-        update_notebooks(doc_path, dest_path=dest_path, update_html=update_html, update_nb=False, update_nb_links=update_nb_links, do_execute=do_execute, html_path=html_path)
+        update_notebooks(doc_path, dest_path=dest_path, update_html=update_html, document_new_fns=document_new_fns,
+                         update_nb_links=update_nb_links, html_path=html_path)
     elif source_path.is_dir():
-        for f in Path(source_path).glob('*.ipynb'):
-            update_notebooks(f, dest_path=dest_path, update_html=update_html, update_nb=update_nb, update_nb_links=update_nb_links, do_execute=do_execute, html_path=html_path)
+        for f in sorted(Path(source_path).glob('*.ipynb')):
+            update_notebooks(f, dest_path=dest_path, update_html=update_html, document_new_fns=document_new_fns,
+                             update_nb_links=update_nb_links, html_path=html_path)
     else: print('Could not resolve source file:', source_path)
-

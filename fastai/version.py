@@ -1,1 +1,2 @@
-__version__ = '1.0.0b7'
+__all__ = ['__version__']
+__version__ = '1.0.53.dev0'
