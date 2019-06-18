@@ -79,7 +79,7 @@ def ifnone(a:Any,b:Any)->Any:
 
 def is1d(a:Collection)->bool:
     "Return `True` if `a` is one-dimensional"
-    return len(a.shape) == 1 if hasattr(a, 'shape') else True
+    return len(a.shape) == 1 if hasattr(a, 'shape') else len(np.array(a).shape) == 1
 
 def uniqueify(x:Series, sort:bool=False)->List:
     "Return sorted unique values of `x`."
@@ -327,15 +327,16 @@ def text2html_table(items:Collection[Collection[str]])->str:
     html_code += "  </tbody>\n</table>"
     return html_code
 
-def parallel(func, arr:Collection, max_workers:int=None):
+def parallel(func, arr:Collection, max_workers:int=None, leave=False):
     "Call `func` on every element of `arr` in parallel using `max_workers`."
     max_workers = ifnone(max_workers, defaults.cpus)
-    if max_workers<2: results = [func(o,i) for i,o in progress_bar(enumerate(arr), total=len(arr))]
+    if max_workers<2: results = [func(o,i) for i,o in progress_bar(enumerate(arr), total=len(arr), leave=leave)]
     else:
         with ProcessPoolExecutor(max_workers=max_workers) as ex:
             futures = [ex.submit(func,o,i) for i,o in enumerate(arr)]
             results = []
-            for f in progress_bar(concurrent.futures.as_completed(futures), total=len(arr)): results.append(f.result())
+            for f in progress_bar(concurrent.futures.as_completed(futures), total=len(arr), leave=leave): 
+                results.append(f.result())
     if any([o is not None for o in results]): return results
 
 def subplots(rows:int, cols:int, imgsize:int=4, figsize:Optional[Tuple[int,int]]=None, title=None, **kwargs):
@@ -368,8 +369,26 @@ def compose(funcs:List[Callable])->Callable:
 class PrettyString(str):
     "Little hack to get strings to show properly in Jupyter."
     def __repr__(self): return self
-    
+
 def float_or_x(x):
     "Tries to convert to float, returns x if it can't"
     try:   return float(x)
     except:return x
+
+def bunzip(fn:PathOrStr):
+    "bunzip `fn`, raising exception if output already exists"
+    fn = Path(fn)
+    assert fn.exists(), f"{fn} doesn't exist"
+    out_fn = fn.with_suffix('')
+    assert not out_fn.exists(), f"{out_fn} already exists"
+    with bz2.BZ2File(fn, 'rb') as src, out_fn.open('wb') as dst:
+        for d in iter(lambda: src.read(1024*1024), b''): dst.write(d)
+
+@contextmanager
+def working_directory(path:PathOrStr):
+    "Change working directory to `path` and return to previous on exit."
+    prev_cwd = Path.cwd()
+    os.chdir(path)
+    try: yield
+    finally: os.chdir(prev_cwd)
+

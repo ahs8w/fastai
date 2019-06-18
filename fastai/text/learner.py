@@ -15,7 +15,7 @@ from .data import *
 __all__ = ['RNNLearner', 'LanguageLearner', 'convert_weights', 'decode_spec_tokens', 'get_language_model', 'language_model_learner', 
            'MultiBatchEncoder', 'get_text_classifier', 'text_classifier_learner', 'PoolingLinearClassifier']
 
-_model_meta = {AWD_LSTM: {'hid_name':'emb_sz', 'url':URLs.WT103_1,
+_model_meta = {AWD_LSTM: {'hid_name':'emb_sz', 'url':URLs.WT103_FWD, 'url_bwd':URLs.WT103_BWD,
                           'config_lm':awd_lstm_lm_config, 'split_lm': awd_lstm_lm_split,
                           'config_clas':awd_lstm_clas_config, 'split_clas': awd_lstm_clas_split},
                Transformer: {'hid_name':'d_model', 'url':URLs.OPENAI_TRANSFORMER,
@@ -56,7 +56,7 @@ class RNNLearner(Learner):
 
     def save_encoder(self, name:str):
         "Save the encoder to `name` inside the model directory."
-        if is_pathlike(file): self._test_writeable_path()
+        if is_pathlike(name): self._test_writeable_path()
         encoder = get_model(self.model)[0]
         if hasattr(encoder, 'module'): encoder = encoder.module
         torch.save(encoder.state_dict(), self.path/self.model_dir/f'{name}.pth')
@@ -188,8 +188,8 @@ class LanguageLearner(RNNLearner):
 def get_language_model(arch:Callable, vocab_sz:int, config:dict=None, drop_mult:float=1.):
     "Create a language model from `arch` and its `config`, maybe `pretrained`."
     meta = _model_meta[arch]
-    config = ifnone(config, meta['config_lm'].copy())
-    for k in config.keys(): 
+    config = ifnone(config, meta['config_lm']).copy()
+    for k in config.keys():
         if k.endswith('_p'): config[k] *= drop_mult
     tie_weights,output_p,out_bias = map(config.pop, ['tie_weights', 'output_p', 'out_bias'])
     init = config.pop('init') if 'init' in config else None
@@ -205,16 +205,16 @@ def language_model_learner(data:DataBunch, arch, config:dict=None, drop_mult:flo
     model = get_language_model(arch, len(data.vocab.itos), config=config, drop_mult=drop_mult)
     meta = _model_meta[arch]
     learn = LanguageLearner(data, model, split_func=meta['split_lm'], **learn_kwargs)
-    if pretrained:
-        if 'url' not in meta: 
-            warn("There are no pretrained weights for that architecture yet!")
-            return learn
-        model_path = untar_data(meta['url'], data=False)
-        fnames = [list(model_path.glob(f'*.{ext}'))[0] for ext in ['pth', 'pkl']]
-        learn.load_pretrained(*fnames)
-        learn.freeze()
-    if pretrained_fnames is not None:
-        fnames = [learn.path/learn.model_dir/f'{fn}.{ext}' for fn,ext in zip(pretrained_fnames, ['pth', 'pkl'])]
+    url = 'url_bwd' if data.backwards else 'url'
+    if pretrained or pretrained_fnames:
+        if pretrained_fnames is not None:
+            fnames = [learn.path/learn.model_dir/f'{fn}.{ext}' for fn,ext in zip(pretrained_fnames, ['pth', 'pkl'])]
+        else:
+            if url not in meta:
+                warn("There are no pretrained weights for that architecture yet!")
+                return learn
+            model_path = untar_data(meta[url] , data=False)
+            fnames = [list(model_path.glob(f'*.{ext}'))[0] for ext in ['pth', 'pkl']]
         learn.load_pretrained(*fnames)
         learn.freeze()
     return learn
@@ -266,13 +266,13 @@ class MultiBatchEncoder(nn.Module):
                 raw_outputs.append(r)
                 outputs.append(o)
         return self.concat(raw_outputs),self.concat(outputs),torch.cat(masks,dim=1)
-    
+
 def get_text_classifier(arch:Callable, vocab_sz:int, n_class:int, bptt:int=70, max_len:int=20*70, config:dict=None, 
                         drop_mult:float=1., lin_ftrs:Collection[int]=None, ps:Collection[float]=None,
                         pad_idx:int=1) -> nn.Module:
     "Create a text classifier from `arch` and its `config`, maybe `pretrained`."
     meta = _model_meta[arch]
-    config = ifnone(config, meta['config_clas'].copy())
+    config = ifnone(config, meta['config_clas']).copy()
     for k in config.keys(): 
         if k.endswith('_p'): config[k] *= drop_mult
     if lin_ftrs is None: lin_ftrs = [50]
