@@ -84,6 +84,11 @@ def tensor(x:Any, *rest)->Tensor:
         return res.long()
     return res
 
+class Module(nn.Module, metaclass=PrePostInitMeta):
+    "Same as `nn.Module`, but no need for subclasses to call `super().__init__`"
+    def __pre_init__(self): super().__init__()
+    def __init__(self): pass
+
 def np_address(x:np.ndarray)->int:
     "Address of `x` in memory."
     return x.__array_interface__['data'][0]
@@ -145,14 +150,11 @@ def range_children(m:nn.Module)->Iterator[int]:
     "Return iterator of len of children of `m`."
     return range(num_children(m))
 
-class ParameterModule(nn.Module):
+class ParameterModule(Module):
     "Register a lone parameter `p` in a module."
-    def __init__(self, p:nn.Parameter):
-        super().__init__()
-        self.val = p
-    
+    def __init__(self, p:nn.Parameter): self.val = p
     def forward(self, x): return x
-    
+
 def children_and_parameters(m:nn.Module):
     "Return the children of `m` and its direct parameters not registered in modules."
     children = list(m.children())
@@ -334,6 +336,12 @@ def logit_(x:Tensor)->Tensor:
     "Inplace logit of `x`, clamped to avoid inf"
     x.clamp_(1e-7, 1-1e-7)
     return (x.reciprocal_().sub_(1)).log_().neg_()
+
+def set_all_seed(seed:int)->None:
+    "Sets the seeds for all pseudo random generators in fastai lib"
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    random.seed(seed)
 
 def uniform(low:Number, high:Number=None, size:Optional[List[int]]=None)->FloatOrTensor:
     "Draw 1 or shape=`size` random floats from uniform dist: min=`low`, max=`high`."
