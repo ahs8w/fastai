@@ -3,6 +3,8 @@ from ..torch_core import *
 from ..callback import *
 from ..basic_train import Learner, LearnerCallback
 
+__all__ = ["MixUpCallback", "MixUpLoss"]
+
 class MixUpCallback(LearnerCallback):
     "Callback that creates the mixed-up input and target."
     def __init__(self, learn:Learner, alpha:float=0.4, stack_x:bool=False, stack_y:bool=True):
@@ -54,10 +56,10 @@ class MixUpLoss(Module):
     def forward(self, output, target):
         if len(target.size()) == 2:
             loss1, loss2 = self.crit(output,target[:,0].long()), self.crit(output,target[:,1].long())
-            d = (loss1 * target[:,2] + loss2 * (1-target[:,2])).mean()
+            d = loss1 * target[:,2] + loss2 * (1-target[:,2])
         else:  d = self.crit(output, target)
-        if self.reduction == 'mean': return d.mean()
-        elif self.reduction == 'sum':            return d.sum()
+        if self.reduction == 'mean':    return d.mean()
+        elif self.reduction == 'sum':   return d.sum()
         return d
     
     def get_old(self):

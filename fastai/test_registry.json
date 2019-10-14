@@ -14,14 +14,14 @@
         },
         {
             "file": "tests/test_basic_data.py",
-            "line": 44,
+            "line": 45,
             "test": "test_DataBunch_no_valid_dl"
         }
     ],
     "fastai.basic_data.DataBunch.one_batch": [
         {
             "file": "tests/test_basic_data.py",
-            "line": 58,
+            "line": 60,
             "test": "test_DataBunch_onebatch"
         },
         {
@@ -41,28 +41,28 @@
         },
         {
             "file": "tests/test_basic_data.py",
-            "line": 83,
+            "line": 85,
             "test": "test_DataBunch_save_load"
         }
     ],
     "fastai.basic_data.DataBunch.one_item": [
         {
             "file": "tests/test_basic_data.py",
-            "line": 67,
+            "line": 69,
             "test": "test_DataBunch_oneitem"
         }
     ],
     "fastai.basic_data.DataBunch.save": [
         {
             "file": "tests/test_basic_data.py",
-            "line": 83,
+            "line": 85,
             "test": "test_DataBunch_save_load"
         }
     ],
     "fastai.basic_data.DataBunch.show_batch": [
         {
             "file": "tests/test_basic_data.py",
-            "line": 75,
+            "line": 77,
             "test": "test_DataBunch_show_batch"
         }
     ],
@@ -81,26 +81,26 @@
         },
         {
             "file": "tests/test_basic_data.py",
-            "line": 83,
+            "line": 85,
             "test": "test_DataBunch_save_load"
         }
     ],
     "fastai.basic_train.Learner.destroy": [
         {
             "file": "tests/test_basic_train.py",
-            "line": 170,
+            "line": 156,
             "test": "test_destroy"
         },
         {
             "file": "tests/test_basic_train.py",
-            "line": 213,
+            "line": 199,
             "test": "test_memory"
         }
     ],
     "fastai.basic_train.Learner.export": [
         {
             "file": "tests/test_basic_train.py",
-            "line": 230,
+            "line": 216,
             "test": "test_export_load_learner"
         }
     ],
@@ -135,12 +135,12 @@
     "fastai.basic_train.Learner.load": [
         {
             "file": "tests/test_basic_train.py",
-            "line": 104,
+            "line": 90,
             "test": "test_save_load"
         },
         {
             "file": "tests/test_basic_train.py",
-            "line": 213,
+            "line": 199,
             "test": "test_memory"
         }
     ],
@@ -164,24 +164,24 @@
         },
         {
             "file": "tests/test_basic_train.py",
-            "line": 104,
+            "line": 90,
             "test": "test_save_load"
         },
         {
             "file": "tests/test_basic_train.py",
-            "line": 213,
+            "line": 199,
             "test": "test_memory"
         }
     ],
     "fastai.basic_train.Learner.save": [
         {
             "file": "tests/test_basic_train.py",
-            "line": 104,
+            "line": 90,
             "test": "test_save_load"
         },
         {
             "file": "tests/test_basic_train.py",
-            "line": 213,
+            "line": 199,
             "test": "test_memory"
         }
     ],
@@ -207,19 +207,19 @@
     "fastai.basic_train.Recorder": [
         {
             "file": "tests/test_vision_train.py",
-            "line": 49,
+            "line": 41,
             "test": "test_1cycle_lrs"
         },
         {
             "file": "tests/test_vision_train.py",
-            "line": 56,
+            "line": 48,
             "test": "test_1cycle_moms"
         }
     ],
     "fastai.basic_train.load_learner": [
         {
             "file": "tests/test_basic_train.py",
-            "line": 230,
+            "line": 216,
             "test": "test_export_load_learner"
         }
     ],
@@ -286,7 +286,7 @@
         },
         {
             "file": "tests/test_basic_train.py",
-            "line": 230,
+            "line": 216,
             "test": "test_export_load_learner"
         }
     ],
@@ -302,6 +302,20 @@
             "file": "tests/test_callbacks_misc.py",
             "line": 22,
             "test": "test_stop_after_n_batches"
+        }
+    ],
+    "fastai.collab.CollabDataBunch.from_df": [
+        {
+            "file": "tests/test_collab_train.py",
+            "line": 16,
+            "test": "test_val_loss"
+        }
+    ],
+    "fastai.collab.collab_learner": [
+        {
+            "file": "tests/test_collab_train.py",
+            "line": 16,
+            "test": "test_val_loss"
         }
     ],
     "fastai.core.Category": [
@@ -755,7 +769,7 @@
         },
         {
             "file": "tests/test_vision_train.py",
-            "line": 41,
+            "line": 55,
             "test": "test_accuracy"
         }
     ],
@@ -786,7 +800,7 @@
         },
         {
             "file": "tests/test_vision_train.py",
-            "line": 45,
+            "line": 59,
             "test": "test_error_rate"
         }
     ],
@@ -872,6 +886,20 @@
             "test": "test_from_df"
         }
     ],
+    "fastai.tabular.learner._cl_int_from_learner": [
+        {
+            "file": "tests/test_vision_train.py",
+            "line": 72,
+            "test": "test_interp"
+        }
+    ],
+    "fastai.tabular.learner._learner_interpret": [
+        {
+            "file": "tests/test_vision_train.py",
+            "line": 78,
+            "test": "test_interp_shortcut"
+        }
+    ],
     "fastai.tabular.models._cl_int_from_learner": [
         {
             "file": "tests/test_vision_train.py",
@@ -896,38 +924,52 @@
     "fastai.tabular.transform.FillMissing": [
         {
             "file": "tests/test_tabular_transform.py",
-            "line": 30,
+            "line": 31,
             "test": "test_default_fill_strategy_is_median"
         }
     ],
     "fastai.tabular.transform.FillMissing.apply_test": [
         {
             "file": "tests/test_tabular_transform.py",
-            "line": 36,
+            "line": 38,
             "test": "test_fill_missing_leaves_no_na_values"
         },
         {
             "file": "tests/test_tabular_transform.py",
-            "line": 49,
+            "line": 52,
             "test": "test_fill_missing_returns_correct_medians"
         }
     ],
     "fastai.tabular.transform.FillMissing.apply_train": [
         {
             "file": "tests/test_tabular_transform.py",
-            "line": 36,
+            "line": 38,
             "test": "test_fill_missing_leaves_no_na_values"
         },
         {
             "file": "tests/test_tabular_transform.py",
-            "line": 49,
+            "line": 52,
             "test": "test_fill_missing_returns_correct_medians"
+        }
+    ],
+    "fastai.tabular.transform.Normalize": [
+        {
+            "file": "tests/test_tabular_transform.py",
+            "line": 86,
+            "test": "test_normalize"
+        }
+    ],
+    "fastai.tabular.transform.add_datepart": [
+        {
+            "file": "tests/test_tabular_transform.py",
+            "line": 102,
+            "test": "test_add_datepart"
         }
     ],
     "fastai.tabular.transform.cont_cat_split": [
         {
             "file": "tests/test_tabular_transform.py",
-            "line": 64,
+            "line": 68,
             "test": "test_cont_cat_split"
         }
     ],
@@ -1867,12 +1909,17 @@
             "file": "tests/test_widgets_image_cleaner.py",
             "line": 30,
             "test": "test_image_cleaner_wrong_input_type"
+        },
+        {
+            "file": "tests/test_widgets_image_cleaner.py",
+            "line": 37,
+            "test": "test_image_cleaner_with_data_from_csv"
         }
     ],
     "fastai.widgets.image_downloader.ImageDownloader": [
         {
             "file": "tests/test_widgets_image_cleaner.py",
-            "line": 36,
+            "line": 45,
             "test": "test_image_downloader_with_path"
         }
     ]

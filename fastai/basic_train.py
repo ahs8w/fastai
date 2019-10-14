@@ -7,7 +7,7 @@ from .utils.ipython import gpu_mem_restore
 import inspect
 from fastprogress.fastprogress import format_time, IN_NOTEBOOK
 from time import time
-from fastai.sixel import plot_sixel
+from .sixel import plot_sixel
 
 __all__ = ['Learner', 'LearnerCallback', 'Recorder', 'RecordOnCPU', 'fit', 'loss_batch', 'train_epoch', 'validate',
            'get_preds', 'load_learner']
@@ -26,7 +26,7 @@ def loss_batch(model:nn.Module, xb:Tensor, yb:Tensor, loss_func:OptLossFunc=None
     out = model(*xb)
     out = cb_handler.on_loss_begin(out)
 
-    if not loss_func: return to_detach(out), yb[0].detach()
+    if not loss_func: return to_detach(out), to_detach(yb[0])
     loss = loss_func(out, *yb)
 
     if opt is not None:
@@ -159,7 +159,6 @@ class Learner():
     layer_groups:Collection[nn.Module]=None
     add_time:bool=True
     silent:bool=None
-    cb_fns_registered:bool=False
     def __post_init__(self)->None:
         "Setup path,metrics, callbacks and ensure model directory exists."
         self.path = Path(ifnone(self.path, self.data.path))
@@ -198,7 +197,6 @@ class Learner():
         if not getattr(self, 'opt', False): self.create_opt(lr, wd)
         else: self.opt.lr,self.opt.wd = lr,wd
         callbacks = [cb(self) for cb in self.callback_fns + listify(defaults.extra_callback_fns)] + listify(callbacks)
-        self.cb_fns_registered = True
         fit(epochs, self, metrics=self.metrics, callbacks=self.callbacks+callbacks)
 
     def create_opt(self, lr:Floats, wd:Floats=0.)->None:
@@ -335,13 +333,9 @@ class Learner():
         "Return predictions and targets on `ds_type` dataset."
         lf = self.loss_func if with_loss else None
         activ = ifnone(activ, _loss_func2activ(self.loss_func))
-        if not self.cb_fns_registered:
-            lr,wd = self.lr_range(defaults.lr),self.wd
-            if not getattr(self, 'opt', False): self.create_opt(lr, wd)
-            else: self.opt.lr,self.opt.wd = lr,wd
-            self.callbacks = [cb(self) for cb in self.callback_fns + listify(defaults.extra_callback_fns)] + listify(self.callbacks)
-            self.cb_fns_registered = True
-        return get_preds(self.model, self.dl(ds_type), cb_handler=CallbackHandler(self.callbacks),
+        if not getattr(self, 'opt', False): self.create_opt(defaults.lr, self.wd)
+        callbacks = [cb(self) for cb in self.callback_fns + listify(defaults.extra_callback_fns)] + listify(self.callbacks)
+        return get_preds(self.model, self.dl(ds_type), cb_handler=CallbackHandler(callbacks),
                          activ=activ, loss_func=lf, n_batch=n_batch, pbar=pbar)
 
     def pred_batch(self, ds_type:DatasetType=DatasetType.Valid, batch:Tuple=None, reconstruct:bool=False, with_dropout:bool=False) -> List[Tensor]:
@@ -458,6 +452,7 @@ class Recorder(LearnerCallback):
     _order=-10
     def __init__(self, learn:Learner, add_time:bool=True, silent:bool=False):
         super().__init__(learn)
+        if not getattr(self.learn, 'opt', False): self.learn.create_opt(defaults.lr, self.learn.wd)
         self.opt = self.learn.opt
         self.train_dl = self.learn.data.train_dl
         self.no_val,self.silent,self.add_time = False,silent,add_time
@@ -613,13 +608,13 @@ def load_callback(class_func, state, learn:Learner):
     for k,v in others.items(): setattr(res, k, v)
     return res
 
-def load_learner(path:PathOrStr, file:PathLikeOrBinaryStream='export.pkl', test:ItemList=None, **db_kwargs):
+def load_learner(path:PathOrStr, file:PathLikeOrBinaryStream='export.pkl', test:ItemList=None, tfm_y=None, **db_kwargs):
     "Load a `Learner` object saved with `export_state` in `path/file` with empty data, optionally add `test` and load on `cpu`. `file` can be file-like (file or buffer)"
     source = Path(path)/file if is_pathlike(file) else file
     state = torch.load(source, map_location='cpu') if defaults.device == torch.device('cpu') else torch.load(source)
     model = state.pop('model')
     src = LabelLists.load_state(path, state.pop('data'))
-    if test is not None: src.add_test(test)
+    if test is not None: src.add_test(test, tfm_y=tfm_y)
     data = src.databunch(**db_kwargs)
     cb_state = state.pop('cb_state')
     clas_func = state.pop('cls')
