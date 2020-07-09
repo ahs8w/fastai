@@ -26,8 +26,13 @@ def test_path_can_be_str_type(path):
 def test_from_folder(path):
     this_tests(ImageDataBunch.from_folder)
     for valid_pct in [None, 0.9]:
-        data = ImageDataBunch.from_folder(path, test='test')
+        data = ImageDataBunch.from_folder(path, test='test', valid_pct=valid_pct)
         mnist_tiny_sanity_test(data)
+        if valid_pct:
+            n_valid = len(data.valid_ds)
+            n_train = len(data.train_ds)
+            n_total = n_valid + n_train
+            assert n_valid == int(n_total * valid_pct)
 
 def test_from_name_re(path):
     this_tests(ImageDataBunch.from_name_re)
@@ -55,7 +60,7 @@ def test_from_csv_and_from_df(path):
     this_tests(ImageDataBunch.from_csv, ImageDataBunch.from_df)
     for func in ['from_csv', 'from_df']:
         files = []
-        if func is 'from_df': data = ImageDataBunch.from_df(path, df=pd.read_csv(path/'labels.csv'), size=28)
+        if func == 'from_df': data = ImageDataBunch.from_df(path, df=pd.read_csv(path/'labels.csv'), size=28)
         else: data = ImageDataBunch.from_csv(path, size=28)
         mnist_tiny_sanity_test(data)
 

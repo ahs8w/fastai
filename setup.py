@@ -95,7 +95,7 @@ dep_groups = {
     'core':   to_list("""
         bottleneck           # performance-improvement for numpy
         dataclasses ; python_version<'3.7'
-        fastprogress>=0.1.19
+        fastprogress>=0.2.1
         beautifulsoup4
         matplotlib
         numexpr              # performance-improvement for numpy
@@ -111,7 +111,7 @@ dep_groups = {
         torch>=1.0.0
 """),
     'text':   to_list("""
-        spacy>=2.0.18
+        spacy>=2.0.18; python_version<'3.8'
 """),
     'vision': to_list("""
         torchvision

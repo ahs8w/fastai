@@ -40,7 +40,7 @@ def loss_batch(model:nn.Module, xb:Tensor, yb:Tensor, loss_func:OptLossFunc=None
 def get_preds(model:nn.Module, dl:DataLoader, pbar:Optional[PBar]=None, cb_handler:Optional[CallbackHandler]=None,
               activ:nn.Module=None, loss_func:OptLossFunc=None, n_batch:Optional[int]=None) -> List[Tensor]:
     "Tuple of predictions and targets, and optional losses (if `loss_func`) using `dl`, max batches `n_batch`."
-    res = [torch.cat(o).cpu() for o in
+    res = [to_float(torch.cat(o).cpu()) for o in
            zip(*validate(model, dl, cb_handler=cb_handler, pbar=pbar, average=False, n_batch=n_batch))]
     if loss_func is not None:
         with NoneReduceOnCPU(loss_func) as lf: res.append(lf(res[0], res[1]))
@@ -211,6 +211,7 @@ class Learner():
 
     def freeze_to(self, n:int)->None:
         "Freeze layers up to layer group `n`."
+        if hasattr(self.model, 'reset'): self.model.reset()
         for g in self.layer_groups[:n]:
             for l in g:
                 if not self.train_bn or not isinstance(l, bn_types): requires_grad(l, False)
@@ -258,12 +259,13 @@ class Learner():
         return self.data.dl(ds_type)
 
     def load(self, file:PathLikeOrBinaryStream=None, device:torch.device=None, strict:bool=True,
-             with_opt:bool=None, purge:bool=False, remove_module:bool=False):
+             with_opt:bool=None, purge:bool=False, remove_module:bool=False)->'Learner':
         "Load model and optimizer state (if `with_opt`) `file` from `self.model_dir` using `device`. `file` can be file-like (file or buffer)"
         if purge: self.purge(clear_opt=ifnone(with_opt, False))
         if device is None: device = self.data.device
         elif isinstance(device, int): device = torch.device('cuda', device)
         source = self.path/self.model_dir/f'{file}.pth' if is_pathlike(file) else file
+        distrib_barrier()
         state = torch.load(source, map_location=device)
         if set(state.keys()) == {'model', 'opt'}:
             model_state = state['model']
@@ -338,16 +340,18 @@ class Learner():
         return get_preds(self.model, self.dl(ds_type), cb_handler=CallbackHandler(callbacks),
                          activ=activ, loss_func=lf, n_batch=n_batch, pbar=pbar)
 
-    def pred_batch(self, ds_type:DatasetType=DatasetType.Valid, batch:Tuple=None, reconstruct:bool=False, with_dropout:bool=False) -> List[Tensor]:
+    def pred_batch(self, ds_type:DatasetType=DatasetType.Valid, batch:Tuple=None, reconstruct:bool=False,
+                   with_dropout:bool=False, activ:nn.Module=None) -> List[Tensor]:
         "Return output of the model on one batch from `ds_type` dataset."
         if batch is not None: xb,yb = batch
         else: xb,yb = self.data.one_batch(ds_type, detach=False, denorm=False)
         cb_handler = CallbackHandler(self.callbacks)
         xb,yb = cb_handler.on_batch_begin(xb,yb, train=False)
+        activ = ifnone(activ, _loss_func2activ(self.loss_func))
         with torch.no_grad():
             if not with_dropout: preds = loss_batch(self.model.eval(), xb, yb, cb_handler=cb_handler)
             else: preds = loss_batch(self.model.eval().apply(self.apply_dropout), xb, yb, cb_handler=cb_handler)
-            res = _loss_func2activ(self.loss_func)(preds[0])
+            res = activ(preds[0])
         if not reconstruct: return res
         res = res.detach().cpu()
         ds = self.dl(ds_type).dataset
@@ -484,7 +488,7 @@ class Recorder(LearnerCallback):
             self.pbar.child.comment = f'{smooth_loss:.4f}'
 
     def on_epoch_end(self, epoch:int, num_batch:int, smooth_loss:Tensor,
-                     last_metrics=MetricsList, **kwargs:Any)->bool:
+                     last_metrics:MetricsList, **kwargs:Any)->bool:
         "Save epoch info: num_batch, smooth_loss, metrics."
         self.nb_batches.append(num_batch)
         if last_metrics is not None: self.val_losses.append(last_metrics[0])
@@ -533,7 +537,7 @@ class Recorder(LearnerCallback):
         ys = spl(xs)
         return ys
 
-    def plot(self, skip_start:int=10, skip_end:int=5, suggestion:bool=False, return_fig:bool=None,
+    def plot(self, skip_start:int=10, skip_end:int=5, suggestion:bool=False, return_fig:bool=None, show_grid:bool=False,
              **kwargs)->Optional[plt.Figure]:
         "Plot learning rate and losses, trimmed between `skip_start` and `skip_end`. Optionally plot and return min gradient"
         lrs = self._split_list(self.lrs, skip_start, skip_end)
@@ -545,6 +549,7 @@ class Recorder(LearnerCallback):
         ax.set_ylabel("Loss")
         ax.set_xlabel("Learning Rate")
         ax.set_xscale('log')
+        if show_grid: plt.grid(True,which="both",ls="-")
         ax.xaxis.set_major_formatter(plt.FormatStrFormatter('%.0e'))
         if suggestion:
             try: mg = (np.gradient(np.array(losses))).argmin()
@@ -559,7 +564,7 @@ class Recorder(LearnerCallback):
         if ifnone(return_fig, defaults.return_fig): return fig
         if not IN_NOTEBOOK: plot_sixel(fig)
 
-    def plot_losses(self, skip_start:int=0, skip_end:int=0, return_fig:bool=None)->Optional[plt.Figure]:
+    def plot_losses(self, skip_start:int=0, skip_end:int=0, return_fig:bool=None, show_grid:bool=False)->Optional[plt.Figure]:
         "Plot training and validation losses."
         fig, ax = plt.subplots(1,1)
         losses = self._split_list(self.losses, skip_start, skip_end)
@@ -568,13 +573,14 @@ class Recorder(LearnerCallback):
         val_iter = self._split_list_val(np.cumsum(self.nb_batches), skip_start, skip_end)
         val_losses = self._split_list_val(self.val_losses, skip_start, skip_end)
         ax.plot(val_iter, val_losses, label='Validation')
+        plt.grid(show_grid)
         ax.set_ylabel('Loss')
         ax.set_xlabel('Batches processed')
         ax.legend()
         if ifnone(return_fig, defaults.return_fig): return fig
         if not IN_NOTEBOOK: plot_sixel(fig)
 
-    def plot_metrics(self, skip_start:int=0, skip_end:int=0, return_fig:bool=None)->Optional[plt.Figure]:
+    def plot_metrics(self, skip_start:int=0, skip_end:int=0, return_fig:bool=None, show_grid:bool=False)->Optional[plt.Figure]:
         "Plot metrics collected during training."
         assert len(self.metrics) != 0, "There are no metrics to plot."
         fig, axes = plt.subplots(len(self.metrics[0]),1,figsize=(6, 4*len(self.metrics[0])))
@@ -584,8 +590,9 @@ class Recorder(LearnerCallback):
             values = [met[i] for met in self.metrics]
             values = self._split_list_val(values, skip_start, skip_end)
             ax.plot(val_iter, values)
+            plt.grid(show_grid)
             ax.set_ylabel(str(self.metrics_names[i]))
-            ax.set_xlabel('Batches processed')             
+            ax.set_xlabel('Batches processed')
         if ifnone(return_fig, defaults.return_fig): return fig
         if not IN_NOTEBOOK: plot_sixel(fig)
 

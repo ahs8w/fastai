@@ -179,7 +179,7 @@ TfmList = Union[Callable, Collection[Callable]]
 class ItemBase():
     "Base item type in the fastai library."
     def __init__(self, data:Any): self.data=self.obj=data
-    def __repr__(self)->str: return f'{self.__class__.__name__} {str(self)}'
+    def __repr__(self)->str: return f'{self.__class__.__name__} {str(self.data)}'
     def show(self, ax:plt.Axes, **kwargs):
         "Subclass this method if you want to customize the way this `ItemBase` is shown on `ax`."
         ax.set_title(str(self))
@@ -192,7 +192,7 @@ class ItemBase():
 def recurse_eq(arr1, arr2):
     if is_listy(arr1): return is_listy(arr2) and len(arr1) == len(arr2) and np.all([recurse_eq(x,y) for x,y in zip(arr1,arr2)])
     else:              return np.all(np.atleast_1d(arr1 == arr2))
-        
+
 def download_url(url:str, dest:str, overwrite:bool=False, pbar:ProgressBar=None,
                  show_progress=True, chunk_size=1024*1024, timeout=4, retries=5)->None:
     "Download `url` to `dest` unless it exists and not `overwrite`."
@@ -200,14 +200,17 @@ def download_url(url:str, dest:str, overwrite:bool=False, pbar:ProgressBar=None,
 
     s = requests.Session()
     s.mount('http://',requests.adapters.HTTPAdapter(max_retries=retries))
+    # additional line to identify as a firefox browser, see #2438
+    s.headers.update({'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:71.0) Gecko/20100101 Firefox/71.0'}) 
     u = s.get(url, stream=True, timeout=timeout)
     try: file_size = int(u.headers["Content-Length"])
     except: show_progress = False
 
     with open(dest, 'wb') as f:
         nbytes = 0
-        if show_progress: pbar = progress_bar(range(file_size), auto_update=False, leave=False, parent=pbar)
+        if show_progress: pbar = progress_bar(range(file_size), leave=False, parent=pbar)
         try:
+            if show_progress: pbar.update(0)
             for chunk in u.iter_content(chunk_size=chunk_size):
                 nbytes += len(chunk)
                 if show_progress: pbar.update(nbytes)
@@ -292,7 +295,7 @@ def split_kwargs_by_func(kwargs, func):
 
 def array(a, dtype:type=None, **kwargs)->np.ndarray:
     "Same as `np.array` but also handles generators. `kwargs` are passed to `np.array` with `dtype`."
-    if not isinstance(a, collections.Sized) and not getattr(a,'__array_interface__',False):
+    if not isinstance(a, Sized) and not getattr(a,'__array_interface__',False):
         a = list(a)
     if np.int_==np.int32 and dtype is None and is_listy(a) and len(a) and isinstance(a[0],int):
         dtype=np.int64
@@ -303,6 +306,11 @@ class EmptyLabel(ItemBase):
     def __init__(self): self.obj,self.data = 0,0
     def __str__(self):  return ''
     def __hash__(self): return hash(str(self))
+    def apply_tfms(self, *args, **kwargs):
+        raise Exception("""Attempting to apply transforms to an empty label. This usually means you are
+        trying to apply transforms on your xs and ys on an inference problem, which will give you wrong
+        predictions. Pass `tfms=None, tfm_y=False` when creating your test set.
+        """)
 
 class Category(ItemBase):
     "Basic class for single classification labels."

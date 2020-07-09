@@ -10,7 +10,7 @@ __all__ = ['ItemList', 'CategoryList', 'MultiCategoryList', 'MultiCategoryProces
 def _decode(df):
     return np.array([[df.columns[i] for i,t in enumerate(x) if t==1] for x in df.values], dtype=np.object)
 
-def _maybe_squeeze(arr): return (arr if is1d(arr) else np.squeeze(arr))
+def _maybe_squeeze(arr): return arr if is1d(arr) else (np.array(arr).ravel() if np.array(arr).shape == () else np.squeeze(arr))
 
 def _path_to_same_str(p_fn):
     "path -> str, but same on nt+posix, for alpha-sort only"
@@ -126,6 +126,7 @@ class ItemList():
         """Create an `ItemList` in `path` from the filenames that have a suffix in `extensions`.
         `recurse` determines if we search subfolders."""
         path = Path(path)
+        assert path.is_dir() and path.exists(), f"{path} is not a valid directory."
         return cls(get_files(path, extensions, recurse=recurse, exclude=exclude, include=include, presort=presort), 
                    path=path, processor=processor, **kwargs)
 
@@ -134,7 +135,8 @@ class ItemList():
         "Create an `ItemList` in `path` from the inputs in the `cols` of `df`."
         inputs = df.iloc[:,df_names_to_idx(cols, df)]
         assert not inputs.isna().any().any(), f"You have NaN values in column(s) {cols} of your dataframe, please fix it."
-        res = cls(items=_maybe_squeeze(inputs.values), path=path, inner_df=df, processor=processor, **kwargs)
+        items = _maybe_squeeze(inputs.values) if len(df) > 1 else (inputs.values[0] if not isinstance(cols, Collection) or len(cols) == 1 else inputs.values)
+        res = cls(items=items, path=path, inner_df=df, processor=processor, **kwargs)
         return res
 
     @classmethod
@@ -260,7 +262,9 @@ class ItemList():
         if label_cls is not None:               return label_cls
         if self.label_cls is not None:          return self.label_cls
         if label_delim is not None:             return MultiCategoryList
-        it = index_row(labels,0)
+        try: it = index_row(labels,0)
+        except: raise Exception("""Can't infer the type of your targets. 
+It's either because your data source is empty or because your labelling function raised an error.""")
         if isinstance(it, (float, np.float32)): return FloatList
         if isinstance(try_int(it), (str, Integral)):  return CategoryList
         if isinstance(it, Collection):          return MultiCategoryList

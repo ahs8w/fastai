@@ -31,12 +31,12 @@ class URLs():
     MNIST_VAR_SIZE_TINY = f'{S3_IMAGE}mnist_var_size_tiny'
     PLANET_SAMPLE       = f'{URL}planet_sample'
     PLANET_TINY         = f'{URL}planet_tiny'
-    IMAGENETTE          = f'{S3_IMAGE}imagenette'
-    IMAGENETTE_160      = f'{S3_IMAGE}imagenette-160'
-    IMAGENETTE_320      = f'{S3_IMAGE}imagenette-320'
-    IMAGEWOOF           = f'{S3_IMAGE}imagewoof'
-    IMAGEWOOF_160       = f'{S3_IMAGE}imagewoof-160'
-    IMAGEWOOF_320       = f'{S3_IMAGE}imagewoof-320'
+    IMAGENETTE          = f'{S3_IMAGE}imagenette2'
+    IMAGENETTE_160      = f'{S3_IMAGE}imagenette2-160'
+    IMAGENETTE_320      = f'{S3_IMAGE}imagenette2-320'
+    IMAGEWOOF           = f'{S3_IMAGE}imagewoof2'
+    IMAGEWOOF_160       = f'{S3_IMAGE}imagewoof2-160'
+    IMAGEWOOF_320       = f'{S3_IMAGE}imagewoof2-320'
 
     # kaggle competitions download dogs-vs-cats -p {DOGS.absolute()}
     DOGS = f'{URL}dogscats'
@@ -71,6 +71,7 @@ class URLs():
     LSUN_BEDROOMS      = f'{S3_IMAGE}bedroom'
     PASCAL_2007        = f'{S3_IMAGELOC}pascal_2007'
     PASCAL_2012        = f'{S3_IMAGELOC}pascal_2012'
+    SKIN_LESION        = f'{S3_IMAGELOC}skin-lesion'
 
     #Pretrained models
     OPENAI_TRANSFORMER = f'{S3_MODEL}transformer'
@@ -110,11 +111,12 @@ _checks = {
     URLs.MNIST_VAR_SIZE_TINY:(565372, 'b71a930f4eb744a4a143a6c7ff7ed67f'),
     URLs.MT_ENG_FRA:(2598183296, '69573f58e2c850b90f2f954077041d8c'),
     URLs.OPENAI_TRANSFORMER:(432848315, '024b0d2203ebb0cd1fc64b27cf8af18e'),
-    URLs.PASCAL_2007:(1636130334, 'a70574e9bc592bd3b253f5bf46ce12e3'),
-    URLs.PASCAL_2012:(2611715776, '2ae7897038383836f86ce58f66b09e31'),
+    URLs.PASCAL_2007:(1637796771, '433b4706eb7c42bd74e7f784e3fdf244'),
+    URLs.PASCAL_2012:(2618908000, 'd90e29e54a4c76c0c6fba8355dcbaca5'),
     URLs.PETS:(811706944, 'e4db5c768afd933bb91f5f594d7417a4'),
     URLs.PLANET_SAMPLE:(15523994, '8bfb174b3162f07fbde09b54555bdb00'),
     URLs.PLANET_TINY:(997569, '490873c5683454d4b2611fb1f00a68a9'),
+    URLs.SKIN_LESION:(6601110169, '3324b8993d541bea49df798a64fe41a3'),
     URLs.SOGOU_NEWS:(384269937, '950f1366d33be52f5b944f8a8b680902'),
     URLs.WIKITEXT:(190200704, '2dd8cf8693b3d27e9c8f0a7df054b2c7'),
     URLs.WIKITEXT_TINY:(4070055, '2a82d47a7b85c8b6a8e068dc4c1d37e7'),
@@ -187,16 +189,17 @@ def url2path(url, data=True, ext:str='.tgz'):
     "Change `url` to a path."
     name = url2name(url)
     return datapath4file(name, ext=ext, archive=False) if data else modelpath4file(name, ext=ext)
+
 def _url2tgz(url, data=True, ext:str='.tgz'):
     return datapath4file(f'{url2name(url)}{ext}', ext=ext) if data else modelpath4file(f'{url2name(url)}{ext}', ext=ext)
 
-def modelpath4file(filename, ext:str='.tgz'):
+def modelpath4file(filename:str, ext:str='.tgz'):
     "Return model path to `filename`, checking locally first then in the config file."
     local_path = URLs.LOCAL_PATH/'models'/filename
     if local_path.exists() or local_path.with_suffix(ext).exists(): return local_path
     else: return Config.model_path()/filename
 
-def datapath4file(filename, ext:str='.tgz', archive=True):
+def datapath4file(filename:str, ext:str='.tgz', archive=True):
     "Return data path to `filename`, checking locally first then in the config file."
     local_path = URLs.LOCAL_PATH/'data'/filename
     if local_path.exists() or local_path.with_suffix(ext).exists(): return local_path
@@ -208,7 +211,7 @@ def download_data(url:str, fname:PathOrStr=None, data:bool=True, ext:str='.tgz')
     fname = Path(ifnone(fname, _url2tgz(url, data, ext=ext)))
     os.makedirs(fname.parent, exist_ok=True)
     if not fname.exists():
-        print(f'Downloading {url}')
+        print(f'Downloading {url}{ext}')
         download_url(f'{url}{ext}', fname)
     return fname
 
@@ -218,7 +221,7 @@ def _check_file(fname):
         hash_nb = hashlib.md5(f.read(2**20)).hexdigest()
     return size,hash_nb
 
-def untar_data(url:str, fname:PathOrStr=None, dest:PathOrStr=None, data=True, force_download=False) -> Path:
+def untar_data(url:str, fname:PathOrStr=None, dest:PathOrStr=None, data=True, force_download=False, verbose=False) -> Path:
     "Download `url` to `fname` if `dest` doesn't exist, and un-tgz to folder `dest`."
     dest = url2path(url, data) if dest is None else Path(dest)/url2name(url)
     fname = Path(ifnone(fname, _url2tgz(url, data)))
@@ -230,5 +233,7 @@ def untar_data(url:str, fname:PathOrStr=None, dest:PathOrStr=None, data=True, fo
         fname = download_data(url, fname=fname, data=data)
         if url in _checks:
             assert _check_file(fname) == _checks[url], f"Downloaded file {fname} does not match checksum expected! Remove that file from {Config().data_archive_path()} and try your code again."
+        if verbose: print('.tgz file downloaded. Extracting the contents...')
         tarfile.open(fname, 'r:gz').extractall(dest.parent)
+        if verbose: print('File extracted successfully.')
     return dest

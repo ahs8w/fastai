@@ -189,9 +189,9 @@ def _download_image_inner(dest, url, i, timeout=4):
     suffix = suffix[0] if len(suffix)>0  else '.jpg'
     download_image(url, dest/f"{i:08d}{suffix}", timeout=timeout)
 
-def download_images(urls:Collection[str], dest:PathOrStr, max_pics:int=1000, max_workers:int=8, timeout=4):
+def download_images(urls:Union[Path, str], dest:PathOrStr, max_pics:int=1000, max_workers:int=8, timeout=4):
     "Download images listed in text file `urls` to path `dest`, at most `max_pics`"
-    urls = open(urls).read().strip().split("\n")[:max_pics]
+    urls = list(filter(None, open(urls).read().strip().split("\n")))[:max_pics]       
     dest = Path(dest)
     dest.mkdir(exist_ok=True)
     parallel(partial(_download_image_inner, dest, timeout=timeout), urls, max_workers=max_workers)
@@ -380,7 +380,7 @@ class SegmentationLabelList(ImageList):
         self.copy_new.append('classes')
         self.classes,self.loss_func = classes,CrossEntropyFlat(axis=1)
 
-    def open(self, fn): return open_mask(fn)
+    def open(self, fn): return open_mask(fn, after_open=self.after_open)
     def analyze_pred(self, pred, thresh:float=0.5): return pred.argmax(dim=0)[None]
     def reconstruct(self, t:Tensor): return ImageSegment(t)
 

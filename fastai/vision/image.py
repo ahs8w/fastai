@@ -179,7 +179,7 @@ class Image(ItemBase):
 
     def affine(self, func:AffineFunc, *args, **kwargs)->'Image':
         "Equivalent to `image.affine_mat = image.affine_mat @ func()`."
-        m = tensor(func(*args, **kwargs)).to(self.device)
+        m = tensor(func(*args, **kwargs)).to(self.device).float()
         self.affine_mat = self.affine_mat @ m
         return self
 
@@ -252,7 +252,7 @@ class ImagePoints(Image):
     "Support applying transforms to a `flow` of points."
     def __init__(self, flow:FlowField, scale:bool=True, y_first:bool=True):
         if scale: flow = scale_flow(flow)
-        if y_first: flow.flow = flow.flow.flip(1)
+        if y_first: flow.flow = flow.flow.flip(1).float()
         self._flow = flow
         self._affine_mat = None
         self.flow_func = []
@@ -538,10 +538,9 @@ def _grid_sample(x:TensorImage, coords:FlowField, mode:str='bilinear', padding_m
         d = min(x.shape[1]/coords.shape[1], x.shape[2]/coords.shape[2])/2
         # If we're resizing up by >200%, and we're zooming less than that, interpolate first
         if d>1 and d>z: x = F.interpolate(x[None], scale_factor=1/d, mode='area')[0]
-    with warnings.catch_warnings():
-        #To avoid the warning that come from grid_sample.
-        warnings.simplefilter("ignore")
-        return F.grid_sample(x[None], coords, mode=mode, padding_mode=padding_mode)[0]
+    kwargs = {'mode': mode, 'padding_mode': padding_mode}
+    if torch.__version__ > "1.2.0": kwargs['align_corners'] = True
+    return F.grid_sample(x[None], coords, **kwargs)[0]
 
 def _affine_grid(size:TensorImageSize)->FlowField:
     size = ((1,)+size)

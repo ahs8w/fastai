@@ -11,7 +11,7 @@ Github. Parentheses after an item show the name or github id of the contributor
 of that change.
 
 
-## 1.0.59.dev0 (Work In Progress)
+## 1.0.62.dev0 (Work In Progress)
 
 ### New:
 
@@ -19,6 +19,37 @@ of that change.
 
 ### Fixed:
 
+
+
+## 1.0.61.dev0 (Work In Progress)
+
+### New:
+
+### Changed:
+
+### Fixed:
+
+
+
+## 1.0.60 (2019-12-28)
+
+### New:
+
+### Changed:
+
+### Fixed:
+
+
+
+## 1.0.59 (2019-10-26)
+
+### New:
+
+### Changed:
+
+### Fixed:
+
+`Learner.get_preds` and `Learner.TTA` now work in FP16
 
 
 ## 1.0.58 (2019-09-29)

@@ -37,7 +37,7 @@ def lr_find(learn:Learner, start_lr:Floats=1e-7, end_lr:Floats=10, num_it:int=10
     end_lr = learn.lr_range(end_lr)
     end_lr = np.array(end_lr) if is_listy(end_lr) else end_lr
     cb = LRFinder(learn, start_lr, end_lr, num_it, stop_div)
-    epochs = int(np.ceil(num_it/len(learn.data.train_dl)))
+    epochs = int(np.ceil(num_it/len(learn.data.train_dl))) * (num_distrib() or 1)
     learn.fit(epochs, start_lr, callbacks=[cb], wd=wd)
 
 def to_fp16(learn:Learner, loss_scale:float=None, max_noskip:int=1000, dynamic:bool=True, clip:float=None,
@@ -173,7 +173,7 @@ class Interpretation():
 class ClassificationInterpretation(Interpretation):
     "Interpretation methods for classification models."
     def __init__(self, learn:Learner, preds:Tensor, y_true:Tensor, losses:Tensor, ds_type:DatasetType=DatasetType.Valid):
-        super(ClassificationInterpretation, self).__init__(learn,preds,y_true,losses,ds_type)
+        super().__init__(learn,preds,y_true,losses,ds_type)
         self.pred_class = self.preds.argmax(dim=1)
 
     def confusion_matrix(self, slice_size:int=1):
@@ -207,6 +207,9 @@ class ClassificationInterpretation(Interpretation):
                 coeff = f'{cm[i, j]:.{norm_dec}f}' if normalize else f'{cm[i, j]}'
                 plt.text(j, i, coeff, horizontalalignment="center", verticalalignment="center", color="white" if cm[i, j] > thresh else "black")
 
+        ax = fig.gca()
+        ax.set_ylim(len(self.data.y.classes)-.5,-.5)
+                           
         plt.tight_layout()
         plt.ylabel('Actual')
         plt.xlabel('Predicted')

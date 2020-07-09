@@ -133,6 +133,10 @@ def requires_grad(m:nn.Module, b:Optional[bool]=None)->Optional[bool]:
     if b is None: return ps[0].requires_grad
     for p in ps: p.requires_grad=b
 
+def has_params(m:nn.Module)->bool:
+    "Check if `m` has at least one parameter"
+    return len(list(m.parameters())) > 0
+        
 def trainable_params(m:nn.Module)->ParamList:
     "Return list of trainable params in `m`."
     res = filter(lambda p: p.requires_grad, m.parameters())
@@ -299,9 +303,9 @@ def np2model_tensor(a):
     if not dtype: return res
     return res.type(dtype)
 
-def _pca(x, k=2):
+def _pca(x, k=2, center=True):
     "Compute PCA of `x` with `k` dimensions."
-    x = x-torch.mean(x,0)
+    if center: x = x-torch.mean(x,0)
     U,S,V = torch.svd(x.t())
     return torch.mm(x,U[:,:k])
 torch.Tensor.pca = _pca
@@ -313,14 +317,6 @@ def trange_of(x):
 def to_np(x): 
     "Convert a tensor to a numpy array."
     return x.data.cpu().numpy()
-
-# monkey patching to allow matplotlib to plot tensors
-def tensor__array__(self, dtype=None):
-    res = to_np(self)
-    if dtype is None: return res
-    else: return res.astype(dtype, copy=False)
-Tensor.__array__ = tensor__array__
-Tensor.ndim = property(lambda x: len(x.shape))
 
 def grab_idx(x,i,batch_first:bool=True):
     "Grab the `i`-th batch in `x`, `batch_first` stating the batch dimension."
@@ -369,7 +365,7 @@ def try_int(o:Any)->Any:
     "Try to convert `o` to int, default to `o` if not possible."
     # NB: single-item rank-1 array/tensor can be converted to int, but we don't want to do this
     if isinstance(o, (np.ndarray,Tensor)): return o if o.ndim else int(o)
-    if isinstance(o, collections.Sized) or getattr(o,'__array_interface__',False): return o
+    if isinstance(o, Sized) or getattr(o,'__array_interface__',False): return o
     try: return int(o)
     except: return o
 
@@ -402,6 +398,10 @@ def rank_distrib():
     "Return the distributed rank of this process (if applicable)."
     return int(os.environ.get('RANK', 0))
 
+def distrib_barrier():
+    "Barrier synchronization in distributed training (if applicable).  Processes in the same process group must all arrive here before proceeding further. Example use case: avoid processes stepping on each other when saving and loading models in distributed training.  See https://pytorch.org/tutorials/intermediate/ddp_tutorial.html#save-and-load-checkpoints."
+    if num_distrib() > 1: torch.distributed.barrier()
+    
 def add_metrics(last_metrics:Collection[Rank0Tensor], mets:Union[Rank0Tensor, Collection[Rank0Tensor]]):
     "Return a dictionary for updating `last_metrics` with `mets`."
     last_metrics,mets = listify(last_metrics),listify(mets)
@@ -409,7 +409,11 @@ def add_metrics(last_metrics:Collection[Rank0Tensor], mets:Union[Rank0Tensor, Co
 
 def try_save(state:Dict, path:Path=None, file:PathLikeOrBinaryStream=None):
     target = open(path/file, 'wb') if is_pathlike(file) else file
-    try: torch.save(state, target)
+    try: 
+        with warnings.catch_warnings():
+            #To avoid the warning that come from PyTorch about model not being checked
+            warnings.simplefilter("ignore")
+            torch.save(state, target)
     except OSError as e:
         raise Exception(f"{e}\n Can't write {path/file}. Pass an absolute writable pathlib obj `fname`.")
 
